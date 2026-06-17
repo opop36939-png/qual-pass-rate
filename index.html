@@ -321,17 +321,6 @@
   <p>한국산업인력공단 공공데이터 기반 · 연도별 회별 합격률 통계</p>
 </div>
 
-<!-- ⚠️ API 키 입력 안내 -->
-<div style="max-width:780px; margin:1.25rem auto 0; padding:0 1rem;">
-  <div class="api-setup">
-    <strong>⚙️ 시작 전 필수 설정: 공공데이터 포털 인증키를 입력하세요</strong>
-    <br><small>공공데이터 포털(data.go.kr) → 마이페이지 → 인증키 확인에서 복사하세요</small>
-    <input type="text" id="apiKeyInput" placeholder="예: abc123xyz456..." />
-    <button onclick="saveApiKey()" style="margin-top:0.5rem; padding:0.4rem 1rem; background:var(--blue-600); color:white; border:none; border-radius:6px; cursor:pointer; font-size:0.85rem;">저장</button>
-    <span id="keyStatus" style="margin-left:0.5rem; font-size:0.82rem;"></span>
-  </div>
-</div>
-
 <!-- 검색 섹션 -->
 <div class="search-section">
   <div class="search-card">
@@ -343,7 +332,7 @@
       </div>
       <div class="form-group">
         <label>연도</label>
-        <input type="number" id="baseYear" placeholder="예: 2023" min="2000" max="2030" />
+        <select id="baseYear" aria-label="연도 선택"></select>
       </div>
     </div>
     <div class="form-row">
@@ -377,7 +366,7 @@
   <!-- 초기 안내 -->
   <div class="msg-box" id="initMsg">
     <div class="icon">📋</div>
-    <p>위에서 <strong>인증키를 입력</strong>하고<br>자격증명 또는 연도를 ���력한 뒤 <strong>조회하기</strong>를 눌러주세요</p>
+    <p>자격증명 또는 연도를 입력한 뒤 <strong>조회하기</strong>를 눌러주세요</p>
     <p class="hint">예시: 자격증명 "정보처리기사", 연도 "2023"</p>
   </div>
 
@@ -435,31 +424,30 @@
   데이터 출처: 한국산업인력공단 공공데이터 포털 | 국가기술자격 합격률 조회 서비스
 </div>
 
+
 <script>
 /* =============================
    설정: API 엔드포인트
    ============================= */
-// 공공데이터 포털에서 승인받은 API 엔드포인트
-// 아래 URL을 공공데이터 포털의 실제 엔드포인트로 변경하세요
-const API_BASE_URL = 'https://apis.data.go.kr/B490007/qualExamPassRate/getQualExamPassRateList';
+const API_BASE_URL = 'https://openapi.q-net.or.kr/api/service/rest/InquiryQualPassRateSVC/getList';
 
 /* =============================
-   API 키 관리
+   API 키
    ============================= */
-let API_KEY = localStorage.getItem('qualExamApiKey') || '';
+const API_KEY = 'd893717dc575bba040bae99992096bce4235de38c230ca0b36e100f481a15100';
 
-window.onload = () => {
-  if (API_KEY) {
-    document.getElementById('apiKeyInput').value = API_KEY;
-    document.getElementById('keyStatus').innerHTML = '<span style="color:green">✔ 저장됨</span>';
-  }
+/* =============================
+   등급 코드 매핑
+   ============================= */
+const GRADE_CODE_MAP = {
+  '기술사': '10',
+  '기능장': '20',
+  '기사': '30',
+  '산업기사': '31',
+  '1급': '32',
+  '2급': '33',
+  '기능사': '40',
 };
-
-function saveApiKey() {
-  API_KEY = document.getElementById('apiKeyInput').value.trim();
-  localStorage.setItem('qualExamApiKey', API_KEY);
-  document.getElementById('keyStatus').innerHTML = '<span style="color:green">✔ 저장됨</span>';
-}
 
 /* =============================
    차트 인스턴스
@@ -468,62 +456,116 @@ let chartInstance = null;
 let currentChartData = null;
 
 /* =============================
-   데이터 파싱 (XML)
+   초기화
    ============================= */
-function parseXML(xmlText) {
+window.addEventListener('DOMContentLoaded', () => {
+  populateYearOptions();
+  setDefaultYear();
+});
+
+function populateYearOptions() {
+  const yearSelect = document.getElementById('baseYear');
+  if (!yearSelect) return;
+
+  const currentYear = new Date().getFullYear();
+  const startYear = 2000;
+  yearSelect.innerHTML = '';
+
+  for (let y = currentYear; y >= startYear; y--) {
+    const opt = document.createElement('option');
+    opt.value = String(y);
+    opt.textContent = String(y);
+    yearSelect.appendChild(opt);
+  }
+}
+
+function setDefaultYear() {
+  const yearSelect = document.getElementById('baseYear');
+  if (!yearSelect) return;
+  const currentYear = String(new Date().getFullYear());
+  const found = Array.from(yearSelect.options).some(opt => opt.value === currentYear);
+  yearSelect.value = found ? currentYear : (yearSelect.options[0]?.value || '');
+}
+
+/* =============================
+   유틸
+   ============================= */
+function getText(parent, selector) {
+  const el = parent.querySelector(selector);
+  return el ? el.textContent.trim() : '';
+}
+
+function parsePercent(value) {
+  if (value == null) return 0;
+  const cleaned = String(value).replace('%', '').replace(/,/g, '').trim();
+  const num = parseFloat(cleaned);
+  return Number.isFinite(num) ? num : 0;
+}
+
+function normalizeText(s) {
+  return String(s || '').trim().toLowerCase();
+}
+
+function parseXmlResponse(xmlText) {
   const parser = new DOMParser();
   const xmlDoc = parser.parseFromString(xmlText, 'application/xml');
 
-  // 에러 체크
-  const errMsg = xmlDoc.querySelector('errMsg');
-  const returnReasonCode = xmlDoc.querySelector('returnReasonCode');
-  if (returnReasonCode && returnReasonCode.textContent !== '00') {
-    throw new Error(`API 오류: ${errMsg ? errMsg.textContent : '알 수 없는 오류'}`);
+  const parserError = xmlDoc.querySelector('parsererror');
+  if (parserError) {
+    throw new Error('XML 파싱에 실패했습니다.');
+  }
+
+  const resultCode = getText(xmlDoc, 'resultCode') || getText(xmlDoc, 'returnReasonCode');
+  const resultMsg = getText(xmlDoc, 'resultMsg') || getText(xmlDoc, 'errMsg');
+
+  if (resultCode && resultCode !== '00') {
+    throw new Error(`API 오류 (${resultCode}): ${resultMsg || '알 수 없는 오류'}`);
   }
 
   const items = xmlDoc.querySelectorAll('item');
   const results = [];
+
   items.forEach(item => {
-    const get = (tag) => {
-      const el = item.querySelector(tag);
-      return el ? el.textContent.trim() : '';
-    };
     results.push({
-      year: get('baseYy') || get('year') || get('examYear'),
-      round: get('implSeq') || get('round') || get('examRound'),
-      qualName: get('qualNm') || get('qualName') || get('jmNm'),
-      gradeName: get('gradeName') || get('grade') || get('jmGrdNm'),
-      examDiv: get('examDivCdNm') || get('examDiv') || get('writtenPractical'),
-      applicants: parseInt(get('implPsnCnt') || get('applicantCnt') || '0'),
-      passers: parseInt(get('passPsnCnt') || get('passCnt') || '0'),
-      passRate: parseFloat(get('passRate') || get('passRt') || '0'),
+      year: getText(item, 'implYy') || getText(item, 'baseYy') || getText(item, 'year'),
+      round: getText(item, 'implSeq') || getText(item, 'round'),
+      qualName: getText(item, 'jmFldNm') || getText(item, 'qualNm') || getText(item, 'qualName'),
+      gradeName: getText(item, 'grdNm') || getText(item, 'gradeName') || getText(item, 'grade'),
+      examDiv: getText(item, 'examTypCcd') || getText(item, 'examDivCdNm') || getText(item, 'examDiv'),
+      applicants: parseInt(getText(item, 'recptNoCnt') || getText(item, 'implPsnCnt') || '0', 10) || 0,
+      passers: parseInt(getText(item, 'examPassCnt') || getText(item, 'passPsnCnt') || '0', 10) || 0,
+      passRate: parsePercent(getText(item, 'passRate') || getText(item, 'passRt')),
     });
   });
+
   return results;
+}
+
+function mapGradeToCodes(gradeName) {
+  if (gradeName && GRADE_CODE_MAP[gradeName]) {
+    return [GRADE_CODE_MAP[gradeName]];
+  }
+  return Object.values(GRADE_CODE_MAP);
 }
 
 /* =============================
    API 호출
    ============================= */
 async function fetchData(params) {
-  if (!API_KEY) {
-    throw new Error('인증키가 없습니다. 상단에서 인증키를 입력하고 저장해 주세요.');
-  }
-
   const query = new URLSearchParams({
-    serviceKey: API_KEY,
+    ServiceKey: API_KEY,
     pageNo: '1',
     numOfRows: '100',
-    ...params
+    ...params,
   });
 
   const url = `${API_BASE_URL}?${query.toString()}`;
-
-  // CORS 문제 해결을 위해 직접 호출
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`서버 오류 (${res.status}): 잠시 후 다시 시도해 주세요.`);
+  const res = await fetch(url, { method: 'GET', mode: 'cors' });
+  if (!res.ok) {
+    throw new Error(`서버 오류 (${res.status}): 잠시 후 다시 시도해 주세요.`);
+  }
   const text = await res.text();
-  return parseXML(text);
+  return parseXmlResponse(text);
 }
 
 /* =============================
@@ -532,36 +574,70 @@ async function fetchData(params) {
 async function search() {
   const qualNm = document.getElementById('qualNm').value.trim();
   const baseYear = document.getElementById('baseYear').value.trim();
-  const examDiv = document.getElementById('examDiv').value;
-  const gradeName = document.getElementById('gradeName').value;
+  const examDiv = document.getElementById('examDiv').value.trim();
+  const gradeName = document.getElementById('gradeName').value.trim();
 
-  if (!qualNm && !baseYear) {
-    alert('자격증명 또는 연도 중 하나 이상 입력해 주세요.');
+  if (!baseYear) {
+    alert('연도를 선택해 주세요.');
     return;
   }
 
-  // UI 상태 변경
   showLoading();
 
-  const params = {};
-  if (qualNm) params.qualNm = qualNm;
-  if (baseYear) params.baseYy = baseYear;
-  if (examDiv) params.examDivCdNm = examDiv;
-  if (gradeName) params.gradeName = gradeName;
-
   try {
-    const data = await fetchData(params);
+    const gradeCodes = mapGradeToCodes(gradeName);
+
+    const requests = gradeCodes.map(code => fetchData({
+      baseYY: baseYear,
+      grdCd: code,
+    }));
+
+    const settled = await Promise.allSettled(requests);
+    const fetched = settled.flatMap(r => r.status === 'fulfilled' ? r.value : []);
+
+    if (fetched.length === 0) {
+      const failed = settled.find(r => r.status === 'rejected');
+      throw new Error(failed ? failed.reason?.message || '데이터를 가져오지 못했습니다.' : '검색 결과가 없습니다.');
+    }
+
+    let data = fetched;
+
+    if (qualNm) {
+      const q = normalizeText(qualNm);
+      data = data.filter(d => normalizeText(d.qualName).includes(q));
+    }
+
+    if (examDiv) {
+      data = data.filter(d => normalizeText(d.examDiv) === normalizeText(examDiv));
+    }
+
+    if (gradeName) {
+      data = data.filter(d => normalizeText(d.gradeName) === normalizeText(gradeName));
+    }
+
+    data = data
+      .filter(d => d.year || d.qualName)
+      .sort((a, b) => {
+        const yearDiff = (parseInt(b.year || '0', 10) || 0) - (parseInt(a.year || '0', 10) || 0);
+        if (yearDiff !== 0) return yearDiff;
+        const roundDiff = (parseInt(b.round || '0', 10) || 0) - (parseInt(a.round || '0', 10) || 0);
+        if (roundDiff !== 0) return roundDiff;
+        return (a.qualName || '').localeCompare(b.qualName || '', 'ko');
+      });
+
     if (data.length === 0) {
-      showError('검색 결과가 없습니다.<br>자격증명이나 연도를 다시 확인해 보세요.<br><small>예: "정보처리기사", "전기기사"</small>');
+      showError(`검색 결과가 없습니다.<br>
+        <small>연도: ${baseYear}${gradeName ? ` / 등급: ${gradeName}` : ''}${qualNm ? ` / 종목명: ${qualNm}` : ''}</small>`);
       return;
     }
+
     renderResults(data);
   } catch (e) {
     showError(`<strong>오류가 발생했습니다</strong>${e.message}<br><br>
       <strong>확인 사항:</strong><br>
       1. 인증키가 올바른지 확인하세요<br>
       2. 공공데이터 포털에서 해당 API 활용신청이 승인되었는지 확인하세요<br>
-      3. 브라우저 CORS 문제가 있을 경우 아래 "오프라인 테스트" 버튼을 눌러 샘플 데이터를 확인하세요
+      3. GitHub Pages 환경에서 CORS가 막히면 Supabase 같은 프록시가 필요합니다
       <br><br>
       <button onclick="loadSampleData()" style="padding:0.4rem 1rem; background:#e53e3e; color:white; border:none; border-radius:6px; cursor:pointer;">
         📊 샘플 데이터로 미리보기
@@ -595,7 +671,6 @@ function loadSampleData() {
 function renderResults(data) {
   currentChartData = data;
 
-  // 요약 통계
   const avgRate = data.reduce((s, d) => s + d.passRate, 0) / data.length;
   const totalApplicants = data.reduce((s, d) => s + d.applicants, 0);
   const totalPassers = data.reduce((s, d) => s + d.passers, 0);
@@ -620,21 +695,19 @@ function renderResults(data) {
     </div>
   `;
 
-  // 차트 렌더링
   renderChart('bar', data);
 
-  // 테이블
   const tbody = document.getElementById('tableBody');
   tbody.innerHTML = data.map(d => `
     <tr>
-      <td>${d.year}</td>
-      <td>${d.round}회</td>
-      <td>${d.qualName}</td>
-      <td>${d.gradeName}</td>
-      <td><span class="badge ${d.examDiv === '실기' ? 'badge-pass' : 'badge-rate'}">${d.examDiv}</span></td>
-      <td>${d.applicants.toLocaleString()}명</td>
-      <td>${d.passers.toLocaleString()}명</td>
-      <td><strong>${d.passRate.toFixed(1)}%</strong></td>
+      <td>${d.year || '-'}</td>
+      <td>${d.round ? `${d.round}회` : '-'}</td>
+      <td>${d.qualName || '-'}</td>
+      <td>${d.gradeName || '-'}</td>
+      <td><span class="badge ${d.examDiv === '실기' ? 'badge-pass' : 'badge-rate'}">${d.examDiv || '-'}</span></td>
+      <td>${Number(d.applicants || 0).toLocaleString()}명</td>
+      <td>${Number(d.passers || 0).toLocaleString()}명</td>
+      <td><strong>${Number(d.passRate || 0).toFixed(1)}%</strong></td>
     </tr>
   `).join('');
 
@@ -647,9 +720,8 @@ function renderResults(data) {
 function renderChart(type, data) {
   if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
 
-  // 라벨: 연도+회차+구분
-  const labels = data.map(d => `${d.year} ${d.round}회 ${d.examDiv}`);
-  const rates = data.map(d => parseFloat(d.passRate.toFixed(1)));
+  const labels = data.map(d => `${d.year || ''} ${d.round ? d.round + '회' : ''} ${d.examDiv || ''}`.trim());
+  const rates = data.map(d => parseFloat((d.passRate || 0).toFixed(1)));
 
   const ctx = document.getElementById('mainChart').getContext('2d');
   chartInstance = new Chart(ctx, {
@@ -741,10 +813,10 @@ function showError(msg) {
   document.getElementById('searchBtn').disabled = false;
 }
 
-// 엔터키 검색
 document.addEventListener('keydown', e => {
   if (e.key === 'Enter') search();
 });
 </script>
+
 </body>
 </html>

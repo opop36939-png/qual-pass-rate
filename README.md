@@ -1,1 +1,0 @@
-# qual-pass-rate

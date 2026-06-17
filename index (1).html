@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>국가기술자격 합격률 조회</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --blue-50: #E6F1FB;
+    --blue-200: #85B7EB;
+    --blue-400: #378ADD;
+    --blue-600: #185FA5;
+    --blue-800: #0C447C;
+    --teal-50: #E1F5EE;
+    --teal-400: #1D9E75;
+    --teal-600: #0F6E56;
+    --amber-50: #FAEEDA;
+    --amber-400: #BA7517;
+    --gray-50: #F1EFE8;
+    --gray-200: #B4B2A9;
+    --gray-600: #5F5E5A;
+    --coral-400: #D85A30;
+  }
+
+  body {
+    font-family: 'Pretendard', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
+    background: #f8f9fb;
+    color: #1a1a2e;
+    min-height: 100vh;
+  }
+
+  /* 헤더 */
+  .header {
+    background: linear-gradient(135deg, var(--blue-800) 0%, var(--blue-600) 100%);
+    color: white;
+    padding: 2rem 1.5rem 2.5rem;
+    text-align: center;
+  }
+  .header h1 {
+    font-size: 1.8rem;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    margin-bottom: 0.4rem;
+  }
+  .header p {
+    font-size: 0.95rem;
+    opacity: 0.85;
+  }
+
+  /* API 키 설정 섹션 */
+  .api-setup {
+    background: #fff3cd;
+    border: 1px solid #ffc107;
+    border-radius: 10px;
+    padding: 1rem 1.25rem;
+    margin: 1.25rem auto;
+    max-width: 780px;
+    font-size: 0.9rem;
+  }
+  .api-setup strong { color: #856404; }
+  .api-setup input {
+    width: 100%;
+    margin-top: 0.6rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid #ffc107;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    background: white;
+  }
+
+  /* 검색 영역 */
+  .search-section {
+    max-width: 780px;
+    margin: 0 auto 1.5rem;
+    padding: 0 1rem;
+  }
+  .search-card {
+    background: white;
+    border-radius: 14px;
+    padding: 1.25rem 1.5rem;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    border: 1px solid #e8eaf0;
+  }
+  .search-card h2 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--blue-800);
+    margin-bottom: 1rem;
+  }
+  .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+  }
+  @media (max-width: 560px) { .form-row { grid-template-columns: 1fr; } }
+  .form-group label {
+    display: block;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--gray-600);
+    margin-bottom: 0.3rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .form-group input, .form-group select {
+    width: 100%;
+    padding: 0.55rem 0.85rem;
+    border: 1.5px solid #dde1ea;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    outline: none;
+    transition: border-color 0.2s;
+    background: #fafbfc;
+  }
+  .form-group input:focus, .form-group select:focus {
+    border-color: var(--blue-400);
+    background: white;
+  }
+  .btn-search {
+    width: 100%;
+    padding: 0.7rem;
+    background: var(--blue-600);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+    margin-top: 0.25rem;
+  }
+  .btn-search:hover { background: var(--blue-800); }
+  .btn-search:disabled { background: var(--gray-200); cursor: not-allowed; }
+
+  /* 메인 컨텐츠 */
+  .main {
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 0 1rem 3rem;
+  }
+
+  /* 안내 메시지 */
+  .msg-box {
+    background: white;
+    border-radius: 12px;
+    padding: 2.5rem 1.5rem;
+    text-align: center;
+    border: 1px solid #e8eaf0;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  }
+  .msg-box .icon { font-size: 2.5rem; margin-bottom: 0.75rem; }
+  .msg-box p { color: var(--gray-600); font-size: 0.95rem; line-height: 1.6; }
+  .msg-box .hint { font-size: 0.82rem; color: var(--gray-200); margin-top: 0.5rem; }
+
+  /* 요약 카드 */
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
+  }
+  @media (max-width: 500px) { .summary-grid { grid-template-columns: 1fr 1fr; } }
+  .summary-card {
+    background: white;
+    border-radius: 12px;
+    padding: 1rem 1.1rem;
+    border: 1px solid #e8eaf0;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  }
+  .summary-card .s-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--gray-600);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    margin-bottom: 0.35rem;
+  }
+  .summary-card .s-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--blue-800);
+  }
+  .summary-card .s-sub {
+    font-size: 0.78rem;
+    color: var(--gray-200);
+    margin-top: 0.15rem;
+  }
+
+  /* 차트 섹션 */
+  .chart-section {
+    background: white;
+    border-radius: 14px;
+    padding: 1.25rem 1.5rem;
+    border: 1px solid #e8eaf0;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    margin-bottom: 1.25rem;
+  }
+  .chart-section h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--blue-800);
+    margin-bottom: 1rem;
+  }
+  .chart-tabs {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+  }
+  .tab-btn {
+    padding: 0.35rem 0.85rem;
+    border: 1.5px solid #dde1ea;
+    border-radius: 20px;
+    background: white;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--gray-600);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .tab-btn.active {
+    background: var(--blue-600);
+    border-color: var(--blue-600);
+    color: white;
+  }
+  .chart-wrap { position: relative; width: 100%; height: 280px; }
+
+  /* 결과 테이블 */
+  .table-section {
+    background: white;
+    border-radius: 14px;
+    padding: 1.25rem 1.5rem;
+    border: 1px solid #e8eaf0;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    margin-bottom: 1rem;
+    overflow-x: auto;
+  }
+  .table-section h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--blue-800);
+    margin-bottom: 1rem;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.88rem;
+  }
+  th {
+    background: var(--blue-50);
+    color: var(--blue-800);
+    font-weight: 600;
+    padding: 0.6rem 0.75rem;
+    text-align: left;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+  td {
+    padding: 0.6rem 0.75rem;
+    border-bottom: 1px solid #f0f1f5;
+    color: #2d2d3e;
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #f8f9fb; }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+  .badge-pass { background: var(--teal-50); color: var(--teal-600); }
+  .badge-rate { background: var(--blue-50); color: var(--blue-600); }
+
+  /* 에러 */
+  .error-box {
+    background: #fff5f5;
+    border: 1px solid #fed7d7;
+    border-radius: 12px;
+    padding: 1.25rem 1.5rem;
+    color: #c53030;
+    font-size: 0.9rem;
+    line-height: 1.6;
+  }
+  .error-box strong { display: block; margin-bottom: 0.4rem; }
+
+  /* 푸터 */
+  .footer {
+    text-align: center;
+    padding: 1.5rem;
+    font-size: 0.78rem;
+    color: var(--gray-200);
+    background: white;
+    border-top: 1px solid #e8eaf0;
+  }
+
+  /* 로딩 스피너 */
+  .spinner {
+    display: inline-block;
+    width: 20px; height: 20px;
+    border: 3px solid #dde1ea;
+    border-top-color: var(--blue-600);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    vertical-align: middle;
+    margin-right: 8px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>🎯 국가기술자격 합격률 조회</h1>
+  <p>한국산업인력공단 공공데이터 기반 · 연도별 회별 합격률 통계</p>
+</div>
+
+<!-- 검색 섹션 -->
+<div class="search-section">
+  <div class="search-card">
+    <h2>🔍 자격증 검색</h2>
+    <div class="form-row">
+      <div class="form-group">
+        <label>자격증명</label>
+        <input type="text" id="qualNm" placeholder="예: 정보처리기사" />
+      </div>
+      <div class="form-group">
+        <label>연도</label>
+        <select id="baseYear" aria-label="연도 선택"></select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>필기/실기 구분</label>
+        <select id="examDiv">
+          <option value="">전체</option>
+          <option value="필기">필기</option>
+          <option value="실기">실기</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>등급</label>
+        <select id="gradeName">
+          <option value="">전체</option>
+          <option value="기술사">기술사</option>
+          <option value="기능장">기능장</option>
+          <option value="기사">기사</option>
+          <option value="산업기사">산업기사</option>
+          <option value="기능사">기능사</option>
+        </select>
+      </div>
+    </div>
+    <button class="btn-search" onclick="search()" id="searchBtn">조회하기</button>
+  </div>
+</div>
+
+<!-- 메인 결과 영역 -->
+<div class="main">
+
+  <!-- 초기 안내 -->
+  <div class="msg-box" id="initMsg">
+    <div class="icon">📋</div>
+    <p>자격증명 또는 연도를 입력한 뒤 <strong>조회하기</strong>를 눌러주세요</p>
+    <p class="hint">예시: 자격증명 "정보처리기사", 연도 "2023"</p>
+  </div>
+
+  <!-- 로딩 -->
+  <div class="msg-box hidden" id="loadingMsg">
+    <div class="icon"><span class="spinner"></span></div>
+    <p>데이터를 불러오는 중입니다...</p>
+  </div>
+
+  <!-- 에러 -->
+  <div class="error-box hidden" id="errorMsg"></div>
+
+  <!-- 결과 영역 -->
+  <div id="resultArea" class="hidden">
+
+    <!-- 요약 카드 -->
+    <div class="summary-grid" id="summaryCards"></div>
+
+    <!-- 차트 -->
+    <div class="chart-section">
+      <h3>📊 합격률 추이</h3>
+      <div class="chart-tabs">
+        <button class="tab-btn active" onclick="switchChart('bar', this)">막대 차트</button>
+        <button class="tab-btn" onclick="switchChart('line', this)">꺾은선 차트</button>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="mainChart" role="img" aria-label="국가기술자격 합격률 차트"></canvas>
+      </div>
+    </div>
+
+    <!-- 상세 테이블 -->
+    <div class="table-section">
+      <h3>📋 상세 데이터</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>연도</th>
+            <th>회차</th>
+            <th>자격증명</th>
+            <th>등급</th>
+            <th>구분</th>
+            <th>응시자</th>
+            <th>합격자</th>
+            <th>합격률</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<div class="footer">
+  데이터 출처: 한국산업인력공단 공공데이터 포털 | 국가기술자격 합격률 조회 서비스
+</div>
+
+
+<script>
+/* =============================
+   설정: API 엔드포인트
+   ============================= */
+const API_BASE_URL = 'https://openapi.q-net.or.kr/api/service/rest/InquiryQualPassRateSVC/getList';
+
+/* =============================
+   API 키
+   ============================= */
+const API_KEY = 'd893717dc575bba040bae99992096bce4235de38c230ca0b36e100f481a15100';
+
+/* =============================
+   등급 코드 매핑
+   ============================= */
+const GRADE_CODE_MAP = {
+  '기술사': '10',
+  '기능장': '20',
+  '기사': '30',
+  '산업기사': '31',
+  '1급': '32',
+  '2급': '33',
+  '기능사': '40',
+};
+
+/* =============================
+   차트 인스턴스
+   ============================= */
+let chartInstance = null;
+let currentChartData = null;
+
+/* =============================
+   초기화
+   ============================= */
+window.addEventListener('DOMContentLoaded', () => {
+  populateYearOptions();
+  setDefaultYear();
+});
+
+function populateYearOptions() {
+  const yearSelect = document.getElementById('baseYear');
+  if (!yearSelect) return;
+
+  const currentYear = new Date().getFullYear();
+  const startYear = 2000;
+  yearSelect.innerHTML = '';
+
+  for (let y = currentYear; y >= startYear; y--) {
+    const opt = document.createElement('option');
+    opt.value = String(y);
+    opt.textContent = String(y);
+    yearSelect.appendChild(opt);
+  }
+}
+
+function setDefaultYear() {
+  const yearSelect = document.getElementById('baseYear');
+  if (!yearSelect) return;
+  const currentYear = String(new Date().getFullYear());
+  const found = Array.from(yearSelect.options).some(opt => opt.value === currentYear);
+  yearSelect.value = found ? currentYear : (yearSelect.options[0]?.value || '');
+}
+
+/* =============================
+   유틸
+   ============================= */
+function getText(parent, selector) {
+  const el = parent.querySelector(selector);
+  return el ? el.textContent.trim() : '';
+}
+
+function parsePercent(value) {
+  if (value == null) return 0;
+  const cleaned = String(value).replace('%', '').replace(/,/g, '').trim();
+  const num = parseFloat(cleaned);
+  return Number.isFinite(num) ? num : 0;
+}
+
+function normalizeText(s) {
+  return String(s || '').trim().toLowerCase();
+}
+
+function parseXmlResponse(xmlText) {
+  const parser = new DOMParser();
+  const xmlDoc = parser.parseFromString(xmlText, 'application/xml');
+
+  const parserError = xmlDoc.querySelector('parsererror');
+  if (parserError) {
+    throw new Error('XML 파싱에 실패했습니다.');
+  }
+
+  const resultCode = getText(xmlDoc, 'resultCode') || getText(xmlDoc, 'returnReasonCode');
+  const resultMsg = getText(xmlDoc, 'resultMsg') || getText(xmlDoc, 'errMsg');
+
+  if (resultCode && resultCode !== '00') {
+    throw new Error(`API 오류 (${resultCode}): ${resultMsg || '알 수 없는 오류'}`);
+  }
+
+  const items = xmlDoc.querySelectorAll('item');
+  const results = [];
+
+  items.forEach(item => {
+    results.push({
+      year: getText(item, 'implYy') || getText(item, 'baseYy') || getText(item, 'year'),
+      round: getText(item, 'implSeq') || getText(item, 'round'),
+      qualName: getText(item, 'jmFldNm') || getText(item, 'qualNm') || getText(item, 'qualName'),
+      gradeName: getText(item, 'grdNm') || getText(item, 'gradeName') || getText(item, 'grade'),
+      examDiv: getText(item, 'examTypCcd') || getText(item, 'examDivCdNm') || getText(item, 'examDiv'),
+      applicants: parseInt(getText(item, 'recptNoCnt') || getText(item, 'implPsnCnt') || '0', 10) || 0,
+      passers: parseInt(getText(item, 'examPassCnt') || getText(item, 'passPsnCnt') || '0', 10) || 0,
+      passRate: parsePercent(getText(item, 'passRate') || getText(item, 'passRt')),
+    });
+  });
+
+  return results;
+}
+
+function mapGradeToCodes(gradeName) {
+  if (gradeName && GRADE_CODE_MAP[gradeName]) {
+    return [GRADE_CODE_MAP[gradeName]];
+  }
+  return Object.values(GRADE_CODE_MAP);
+}
+
+/* =============================
+   API 호출
+   ============================= */
+async function fetchData(params) {
+  const query = new URLSearchParams({
+    ServiceKey: API_KEY,
+    pageNo: '1',
+    numOfRows: '100',
+    ...params,
+  });
+
+  const url = `${API_BASE_URL}?${query.toString()}`;
+  const res = await fetch(url, { method: 'GET', mode: 'cors' });
+  if (!res.ok) {
+    throw new Error(`서버 오류 (${res.status}): 잠시 후 다시 시도해 주세요.`);
+  }
+  const text = await res.text();
+  return parseXmlResponse(text);
+}
+
+/* =============================
+   검색 실행
+   ============================= */
+async function search() {
+  const qualNm = document.getElementById('qualNm').value.trim();
+  const baseYear = document.getElementById('baseYear').value.trim();
+  const examDiv = document.getElementById('examDiv').value.trim();
+  const gradeName = document.getElementById('gradeName').value.trim();
+
+  if (!baseYear) {
+    alert('연도를 선택해 주세요.');
+    return;
+  }
+
+  showLoading();
+
+  try {
+    const gradeCodes = mapGradeToCodes(gradeName);
+
+    const requests = gradeCodes.map(code => fetchData({
+      baseYY: baseYear,
+      grdCd: code,
+    }));
+
+    const settled = await Promise.allSettled(requests);
+    const fetched = settled.flatMap(r => r.status === 'fulfilled' ? r.value : []);
+
+    if (fetched.length === 0) {
+      const failed = settled.find(r => r.status === 'rejected');
+      throw new Error(failed ? failed.reason?.message || '데이터를 가져오지 못했습니다.' : '검색 결과가 없습니다.');
+    }
+
+    let data = fetched;
+
+    if (qualNm) {
+      const q = normalizeText(qualNm);
+      data = data.filter(d => normalizeText(d.qualName).includes(q));
+    }
+
+    if (examDiv) {
+      data = data.filter(d => normalizeText(d.examDiv) === normalizeText(examDiv));
+    }
+
+    if (gradeName) {
+      data = data.filter(d => normalizeText(d.gradeName) === normalizeText(gradeName));
+    }
+
+    data = data
+      .filter(d => d.year || d.qualName)
+      .sort((a, b) => {
+        const yearDiff = (parseInt(b.year || '0', 10) || 0) - (parseInt(a.year || '0', 10) || 0);
+        if (yearDiff !== 0) return yearDiff;
+        const roundDiff = (parseInt(b.round || '0', 10) || 0) - (parseInt(a.round || '0', 10) || 0);
+        if (roundDiff !== 0) return roundDiff;
+        return (a.qualName || '').localeCompare(b.qualName || '', 'ko');
+      });
+
+    if (data.length === 0) {
+      showError(`검색 결과가 없습니다.<br>
+        <small>연도: ${baseYear}${gradeName ? ` / 등급: ${gradeName}` : ''}${qualNm ? ` / 종목명: ${qualNm}` : ''}</small>`);
+      return;
+    }
+
+    renderResults(data);
+  } catch (e) {
+    showError(`<strong>오류가 발생했습니다</strong>${e.message}<br><br>
+      <strong>확인 사항:</strong><br>
+      1. 인증키가 올바른지 확인하세요<br>
+      2. 공공데이터 포털에서 해당 API 활용신청이 승인되었는지 확인하세요<br>
+      3. GitHub Pages 환경에서 CORS가 막히면 Supabase 같은 프록시가 필요합니다
+      <br><br>
+      <button onclick="loadSampleData()" style="padding:0.4rem 1rem; background:#e53e3e; color:white; border:none; border-radius:6px; cursor:pointer;">
+        📊 샘플 데이터로 미리보기
+      </button>`);
+  }
+}
+
+/* =============================
+   샘플 데이터 (오프라인 테스트용)
+   ============================= */
+function loadSampleData() {
+  const sampleData = [
+    { year:'2023', round:'1', qualName:'정보처리기사', gradeName:'기사', examDiv:'필기', applicants:112850, passers:31599, passRate:28.0 },
+    { year:'2023', round:'2', qualName:'정보처리기사', gradeName:'기사', examDiv:'필기', applicants:98420, passers:27558, passRate:28.0 },
+    { year:'2023', round:'3', qualName:'정보처리기사', gradeName:'기사', examDiv:'필기', applicants:87650, passers:24542, passRate:28.0 },
+    { year:'2022', round:'1', qualName:'정보처리기사', gradeName:'기사', examDiv:'필기', applicants:104320, passers:41728, passRate:40.0 },
+    { year:'2022', round:'2', qualName:'정보처리기사', gradeName:'기사', examDiv:'필기', applicants:96540, passers:36685, passRate:38.0 },
+    { year:'2021', round:'1', qualName:'정보처리기사', gradeName:'기사', examDiv:'필기', applicants:89200, passers:35680, passRate:40.0 },
+    { year:'2021', round:'2', qualName:'정보처리기사', gradeName:'기사', examDiv:'필기', applicants:82500, passers:30525, passRate:37.0 },
+    { year:'2023', round:'1', qualName:'정보처리기사', gradeName:'기사', examDiv:'실기', applicants:65320, passers:27434, passRate:42.0 },
+    { year:'2023', round:'2', qualName:'정보처리기사', gradeName:'기사', examDiv:'실기', applicants:58420, passers:22979, passRate:39.3 },
+    { year:'2022', round:'1', qualName:'정보처리기사', gradeName:'기사', examDiv:'실기', applicants:60100, passers:24040, passRate:40.0 },
+    { year:'2022', round:'2', qualName:'정보처리기사', gradeName:'기사', examDiv:'실기', applicants:55800, passers:20346, passRate:36.5 },
+  ];
+  renderResults(sampleData);
+}
+
+/* =============================
+   결과 렌더링
+   ============================= */
+function renderResults(data) {
+  currentChartData = data;
+
+  const avgRate = data.reduce((s, d) => s + d.passRate, 0) / data.length;
+  const totalApplicants = data.reduce((s, d) => s + d.applicants, 0);
+  const totalPassers = data.reduce((s, d) => s + d.passers, 0);
+  const maxRate = Math.max(...data.map(d => d.passRate));
+  const minRate = Math.min(...data.map(d => d.passRate));
+
+  document.getElementById('summaryCards').innerHTML = `
+    <div class="summary-card">
+      <div class="s-label">평균 합격률</div>
+      <div class="s-value">${avgRate.toFixed(1)}%</div>
+      <div class="s-sub">총 ${data.length}건</div>
+    </div>
+    <div class="summary-card">
+      <div class="s-label">총 응시자</div>
+      <div class="s-value">${(totalApplicants/10000).toFixed(1)}<span style="font-size:1rem">만</span></div>
+      <div class="s-sub">합격 ${(totalPassers/10000).toFixed(1)}만명</div>
+    </div>
+    <div class="summary-card">
+      <div class="s-label">최고 / 최저</div>
+      <div class="s-value" style="font-size:1.2rem">${maxRate.toFixed(1)}% <span style="font-size:0.85rem; color:var(--gray-600)">/ ${minRate.toFixed(1)}%</span></div>
+      <div class="s-sub">합격률 범위</div>
+    </div>
+  `;
+
+  renderChart('bar', data);
+
+  const tbody = document.getElementById('tableBody');
+  tbody.innerHTML = data.map(d => `
+    <tr>
+      <td>${d.year || '-'}</td>
+      <td>${d.round ? `${d.round}회` : '-'}</td>
+      <td>${d.qualName || '-'}</td>
+      <td>${d.gradeName || '-'}</td>
+      <td><span class="badge ${d.examDiv === '실기' ? 'badge-pass' : 'badge-rate'}">${d.examDiv || '-'}</span></td>
+      <td>${Number(d.applicants || 0).toLocaleString()}명</td>
+      <td>${Number(d.passers || 0).toLocaleString()}명</td>
+      <td><strong>${Number(d.passRate || 0).toFixed(1)}%</strong></td>
+    </tr>
+  `).join('');
+
+  showResults();
+}
+
+/* =============================
+   차트 렌더링
+   ============================= */
+function renderChart(type, data) {
+  if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+
+  const labels = data.map(d => `${d.year || ''} ${d.round ? d.round + '회' : ''} ${d.examDiv || ''}`.trim());
+  const rates = data.map(d => parseFloat((d.passRate || 0).toFixed(1)));
+
+  const ctx = document.getElementById('mainChart').getContext('2d');
+  chartInstance = new Chart(ctx, {
+    type: type,
+    data: {
+      labels,
+      datasets: [{
+        label: '합격률 (%)',
+        data: rates,
+        backgroundColor: type === 'bar'
+          ? rates.map(r => r >= 40 ? 'rgba(29,158,117,0.7)' : r >= 25 ? 'rgba(55,138,221,0.7)' : 'rgba(186,117,23,0.7)')
+          : 'rgba(55,138,221,0.1)',
+        borderColor: type === 'bar'
+          ? rates.map(r => r >= 40 ? '#0F6E56' : r >= 25 ? '#185FA5' : '#854F0B')
+          : '#185FA5',
+        borderWidth: type === 'bar' ? 1.5 : 2.5,
+        tension: 0.35,
+        fill: type === 'line',
+        pointBackgroundColor: '#185FA5',
+        pointRadius: 4,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => ` 합격률: ${ctx.parsed.y}%`
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: {
+            font: { size: 11 },
+            maxRotation: 45,
+            autoSkip: data.length > 10
+          },
+          grid: { color: 'rgba(0,0,0,0.04)' }
+        },
+        y: {
+          min: 0,
+          max: 100,
+          ticks: {
+            callback: v => v + '%',
+            font: { size: 11 }
+          },
+          grid: { color: 'rgba(0,0,0,0.06)' }
+        }
+      }
+    }
+  });
+}
+
+function switchChart(type, btn) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  if (currentChartData) renderChart(type, currentChartData);
+}
+
+/* =============================
+   UI 상태 관리
+   ============================= */
+function showLoading() {
+  document.getElementById('initMsg').classList.add('hidden');
+  document.getElementById('errorMsg').classList.add('hidden');
+  document.getElementById('resultArea').classList.add('hidden');
+  document.getElementById('loadingMsg').classList.remove('hidden');
+  document.getElementById('searchBtn').disabled = true;
+}
+
+function showResults() {
+  document.getElementById('loadingMsg').classList.add('hidden');
+  document.getElementById('errorMsg').classList.add('hidden');
+  document.getElementById('initMsg').classList.add('hidden');
+  document.getElementById('resultArea').classList.remove('hidden');
+  document.getElementById('searchBtn').disabled = false;
+}
+
+function showError(msg) {
+  document.getElementById('loadingMsg').classList.add('hidden');
+  document.getElementById('resultArea').classList.add('hidden');
+  document.getElementById('initMsg').classList.add('hidden');
+  const errEl = document.getElementById('errorMsg');
+  errEl.innerHTML = msg;
+  errEl.classList.remove('hidden');
+  document.getElementById('searchBtn').disabled = false;
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter') search();
+});
+</script>
+
+</body>
+</html>
